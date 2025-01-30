@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modelo 3D con Fondo 360 Interactivo</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            display: block;
+        }
+        .logo-container {
+            position: absolute;
+            z-index: 1; /* Asegura que el logo esté encima del fondo */
+            pointer-events: none; /* Desactiva la interacción del logo */
+        }
+    </style>
+</head>
+<body>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+    <script>
+        // Configuración de la escena
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Iluminación
+        const light = new THREE.AmbientLight(0xffffff, 1.2);
+        scene.add(light);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(5, 5, 5);
+        scene.add(directionalLight);
+
+        // Crear un grupo para el modelo (Pivot para girar de manera precisa)
+        const pivot = new THREE.Group();
+        scene.add(pivot);
+
+        // Variables de rotación inicial
+        let rotationX = -0.3;  // Corrección para evitar diferencias de posición
+        let rotationY = Math.PI / 4;
+        let rotationZ = 0;
+
+        // Cargar el modelo glTF
+        const loader = new THREE.GLTFLoader();
+        let model;
+
+        loader.load('render/isometric.glb', (gltf) => {
+            model = gltf.scene;
+
+            // Centrar el modelo
+            const box = new THREE.Box3().setFromObject(model);
+            const center = new THREE.Vector3();
+            box.getCenter(center);
+            model.position.sub(center);
+            pivot.add(model);
+
+            // Ajustar escala según el dispositivo
+            adjustScale();
+            window.addEventListener("resize", adjustScale);
+
+            // Posición inicial idéntica a la de regreso
+            pivot.rotation.set(rotationX, rotationY, rotationZ);
+        }, undefined, (error) => {
+            console.error("Error al cargar el modelo:", error);
+        });
+
+        // Configuración de la cámara
+        camera.position.set(0, 0, 5);
+
+        // Fondo 360º (mismo principio que una imagen esférica)
+        const textureLoader = new THREE.TextureLoader();
+        const backgroundTexture = textureLoader.load('render/backg.jpg'); // Cambia la ruta
+        const backgroundGeometry = new THREE.SphereGeometry(100, 50, 50);
+        const backgroundMaterial = new THREE.MeshBasicMaterial({ map: backgroundTexture, side: THREE.BackSide });
+        const background = new THREE.Mesh(backgroundGeometry, backgroundMaterial);
+        scene.add(background);
+
+        // Variables para el control de giro
+        let isDragging = false;
+        let startX = 0, startY = 0;
+        let lastRotX = rotationX, lastRotY = rotationY;
+        const sensitivity = 0.004;
+        let hasMoved = false;
+
+        // Función para ajustar la escala
+        function adjustScale() {
+            const screenWidth = window.innerWidth;
+            if (screenWidth < 600) {
+                model.scale.set(0.6, 0.6, 0.6);
+            } else if (screenWidth < 1200) {
+                model.scale.set(0.8, 0.8, 0.8);
+            } else {
+                model.scale.set(1, 1, 1);
+            }
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        const startDrag = (clientX, clientY) => {
+            isDragging = true;
+            startX = clientX;
+            startY = clientY;
+            lastRotX = rotationX;
+            lastRotY = rotationY;
+            hasMoved = false;
+        };
+
+        const doDrag = (clientX, clientY) => {
+            if (!isDragging) return;
+
+            const deltaX = (clientX - startX) * sensitivity;
+            const deltaY = (clientY - startY) * sensitivity;
+
+            // Para evitar que haga un salto abrupto al primer clic
+            if (!hasMoved && (Math.abs(deltaX) > 0.01 || Math.abs(deltaY) > 0.01)) {
+                hasMoved = true;
+            }
+
+            if (hasMoved) {
+                rotationY = lastRotY + deltaX * 5;
+                rotationX = lastRotX - deltaY * 5;
+
+                gsap.to(pivot.rotation, {
+                    x: rotationX,
+                    y: rotationY,
+                    z: rotationZ,
+                    duration: 0.1
+                });
+
+                // Mover el fondo
+                background.rotation.y += deltaX * 0.1;  // El fondo sigue el movimiento horizontal
+            }
+        };
+
+        const endDrag = () => {
+            if (!isDragging) return;
+            isDragging = false;
+        };
+
+        window.addEventListener('mousedown', (e) => startDrag(e.clientX, e.clientY));
+        window.addEventListener('mousemove', (e) => doDrag(e.clientX, e.clientY));
+        window.addEventListener('mouseup', endDrag);
+
+        window.addEventListener('touchstart', (e) => {
+            startDrag(e.touches[0].clientX, e.touches[0].clientY);
+            e.preventDefault();
+        }, { passive: false });
+
+        window.addEventListener('touchmove', (e) => {
+            doDrag(e.touches[0].clientX, e.touches[0].clientY);
+            e.preventDefault();
+        }, { passive: false });
+
+        window.addEventListener('touchend', endDrag);
+
+        // Ajustar el tamaño del renderizado cuando cambia el tamaño de la ventana
+        window.addEventListener('resize', adjustScale);
+
+        // Animación
+        const animate = () => {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        };
+        animate();
+    </script>
+</body>
+</html>
