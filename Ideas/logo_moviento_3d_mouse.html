@@ -35,6 +35,8 @@
         scene.add(pivot);
 
         let rotationY = Math.PI / 4;
+        let rotationX = 0;
+        const maxRotationX = 0.5; // Limita el giro vertical para evitar distorsión
 
         const loader = new THREE.GLTFLoader();
         let model;
@@ -62,6 +64,7 @@
 
         let isDragging = false;
         let startX = 0;
+        let startY = 0;
         
         function adjustScale() {
             const screenWidth = window.innerWidth;
@@ -74,40 +77,49 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        const startDrag = (clientX) => {
+        const startDrag = (clientX, clientY) => {
             isDragging = true;
             startX = clientX;
+            startY = clientY;
         };
 
-        const doDrag = (clientX) => {
+        const doDrag = (clientX, clientY) => {
             if (!isDragging) return;
-            const deltaX = clientX - startX;
-            rotationY += deltaX * 0.005; // Movimiento 1:1
+            const deltaX = (clientX - startX) * 0.005;
+            const deltaY = (clientY - startY) * 0.005;
+            
+            rotationY += deltaX; // Movimiento horizontal
+            rotationX -= deltaY; // Movimiento vertical
+            rotationX = Math.max(-maxRotationX, Math.min(maxRotationX, rotationX)); // Limitar el giro vertical
+            
             pivot.rotation.y = rotationY;
-            background.rotation.y -= deltaX * 0.005;
+            pivot.rotation.x = rotationX;
+            background.rotation.y -= deltaX;
+            background.rotation.x -= deltaY * 0.5; // Menos impacto en el fondo
+            
             startX = clientX;
+            startY = clientY;
         };
 
         const endDrag = () => {
             isDragging = false;
         };
 
-        window.addEventListener('mousedown', (e) => startDrag(e.clientX));
-        window.addEventListener('mousemove', (e) => doDrag(e.clientX));
+        window.addEventListener('mousedown', (e) => startDrag(e.clientX, e.clientY));
+        window.addEventListener('mousemove', (e) => doDrag(e.clientX, e.clientY));
         window.addEventListener('mouseup', endDrag);
 
         window.addEventListener('touchstart', (e) => {
-            startDrag(e.touches[0].clientX);
+            startDrag(e.touches[0].clientX, e.touches[0].clientY);
             e.preventDefault();
         }, { passive: false });
 
         window.addEventListener('touchmove', (e) => {
-            doDrag(e.touches[0].clientX);
+            doDrag(e.touches[0].clientX, e.touches[0].clientY);
             e.preventDefault();
         }, { passive: false });
 
         window.addEventListener('touchend', endDrag);
-
         window.addEventListener('resize', adjustScale);
 
         const animate = () => {
